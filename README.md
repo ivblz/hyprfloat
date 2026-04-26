@@ -27,7 +27,7 @@ exec-once = python ~/.local/share/bin/hyprfloat/hyprfloat.py &
 }
 ```
 
-( whole thing uses about 17MB btw )
+( whole thing uses about 16MB btw )
 
 All cases when the terminal is in a floating state:
 1. The terminal is open on an empty regular workspace.

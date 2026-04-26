@@ -45,9 +45,6 @@ def is_visible_workspace_window(window, workspace):
 def has_tiled_window(windows, ignored_address):
     return any(window['address'] != ignored_address and not window.get('floating', False) for window in windows)
 
-def index_clients(clients):
-    return {client['address']: client for client in clients}
-
 def float_lonely_matching_window(workspace, clients):
     if not FLOAT_CLOSE:
         return clients
@@ -58,7 +55,8 @@ def float_lonely_matching_window(workspace, clients):
         return clients
 
     address = matching_windows[0]['address']
-    if not has_tiled_window(all_windows, address):
+    has_tiled = has_tiled_window(all_windows, address)
+    if not has_tiled:
         for window in all_windows:
             if window['address'] != address:
                 tile_window(window)
@@ -68,8 +66,9 @@ def float_lonely_matching_window(workspace, clients):
         matching_windows = [window for window in all_windows if is_matching_window(window)]
         if len(matching_windows) != 1:
             return clients
+        has_tiled = has_tiled_window(all_windows, matching_windows[0]['address'])
 
-    if has_tiled_window(all_windows, matching_windows[0]['address']):
+    if has_tiled:
         tile_window(matching_windows[0])
     else:
         float_window(matching_windows[0])
@@ -79,8 +78,11 @@ def float_lonely_matching_window(workspace, clients):
 def get_windows(workspace, clients):
     return [c for c in clients if workspace_matches(c, workspace) and is_visible_workspace_window(c, workspace)]
 
-def get_client(address, clients_by_address):
-    return clients_by_address.get(address)
+def get_client(address, clients):
+    for client in clients:
+        if client['address'] == address:
+            return client
+    return None
 
 def get_client_workspace(client):
     workspace = client.get('workspace', {})
@@ -104,20 +106,22 @@ def tile_window(window):
 def settle_matching_window(window, workspace, clients):
     address = window['address']
     all_windows = get_windows(workspace, clients)
+    has_tiled = has_tiled_window(all_windows, address)
 
-    if not has_tiled_window(all_windows, address):
+    if not has_tiled:
         for other_window in all_windows:
             if other_window['address'] != address:
                 tile_window(other_window)
 
         clients = get_clients()
-        window = get_client(address, index_clients(clients))
+        window = get_client(address, clients)
         if not window:
             return clients
 
         all_windows = get_windows(workspace, clients)
+        has_tiled = has_tiled_window(all_windows, address)
 
-    if has_tiled_window(all_windows, address):
+    if has_tiled:
         for matching_window in all_windows:
             if is_matching_window(matching_window):
                 tile_window(matching_window)
@@ -141,11 +145,10 @@ with socket(AF_UNIX, SOCK_STREAM) as sock:
         if event.startswith('openwindow>>'):
             data = event.split('>>')[1].split(',')
             clients = get_clients()
-            clients_by_address = index_clients(clients)
             if len(data) >= 3 and data[2] in WINDOW_CLASSES:
                 address = normalize_address(data[0])
                 event_workspace = data[1]
-                client = get_client(address, clients_by_address)
+                client = get_client(address, clients)
                 workspace = get_client_workspace(client) if client else event_workspace
                 window_workspaces[address] = workspace
                 if client:
@@ -153,26 +156,25 @@ with socket(AF_UNIX, SOCK_STREAM) as sock:
             else:
                 if len(data) >= 2:
                     address = normalize_address(data[0])
-                    client = get_client(address, clients_by_address)
+                    client = get_client(address, clients)
                     if client:
                         workspace = get_client_workspace(client)
                         window_workspaces[address] = workspace
 
                     if client and not client.get('floating', False):
                         all_windows = get_windows(workspace, clients)
-                        matching_windows = [window for window in all_windows if is_matching_window(window)]
-                        if len(all_windows) > 1 and len(matching_windows) > 0:
-                            for window in matching_windows:
-                                tile_window(window)
+                        if len(all_windows) > 1:
+                            for window in all_windows:
+                                if is_matching_window(window):
+                                    tile_window(window)
 
         elif event.startswith('movewindow>>') or event.startswith('movewindowv2>>'):
             data = event.split('>>')[1].split(',')
             clients = get_clients()
-            clients_by_address = index_clients(clients)
             if len(data) >= 1:
                 address = normalize_address(data[0])
                 old_workspace = window_workspaces.get(address)
-                client = get_client(address, clients_by_address)
+                client = get_client(address, clients)
 
                 if client:
                     new_workspace = get_client_workspace(client)
